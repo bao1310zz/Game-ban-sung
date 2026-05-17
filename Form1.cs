@@ -9,8 +9,8 @@ using Timer = System.Windows.Forms.Timer;
 namespace SpaceShooter
 {
     // Class lưu thông số quái
-    public class EnemyInfo { public int Hp; public int MaxHp; public int Speed; public bool IsBoss; }
-    // Class lưu thông số đạn (để bắn chùm, đạn bay chéo)
+    public class EnemyInfo { public int Hp; public int MaxHp; public int Speed; public bool IsBoss; public int FireCooldown; }
+    // Class lưu thông số đạn 
     public class BulletInfo { public int Dx; public int Dy; public int Dmg; }
 
     public partial class Form1 : Form
@@ -28,14 +28,14 @@ namespace SpaceShooter
         int score = 0;
         
         // Vũ khí
-        int multiShot = 1; // Số nòng súng (1 đến 3)
-        bool isBigBullet = false; // Đạn bự
+        int multiShot = 1; 
+        bool isBigBullet = false; 
 
         // --- HỆ THỐNG WAVE (ĐỢT) ---
         int currentWave = 1;
-        int enemiesToSpawn = 5;
+        int enemiesToSpawn = 3; // Đợt 1 có 3 con quái làm nóng tay
         int enemiesSpawned = 0;
-        int wavePauseTimer = 0; // Nghỉ giữa các đợt
+        int wavePauseTimer = 0; 
 
         ProgressBar pbHealth, pbXp;
         Label lblScore, lblLevel, lblCountdown, lblWave;
@@ -46,7 +46,7 @@ namespace SpaceShooter
         List<PictureBox> enemies = new List<PictureBox>();
         Random rnd = new Random();
 
-        Button[] btnUpgrades = new Button[3]; // 3 nút nâng cấp
+        Button[] btnUpgrades = new Button[3]; 
 
         public Form1()
         {
@@ -110,20 +110,17 @@ namespace SpaceShooter
 
             for (int i = 0; i < 3; i++)
             {
-                // Gán sẵn 1 sự kiện Click duy nhất cho cả 3 nút
                 btnUpgrades[i] = CreateButton("Option", 50, 80 + (i * 80), UpgradeButtonClicked);
                 btnUpgrades[i].Width = 400;
                 pnlUpgrade.Controls.Add(btnUpgrades[i]);
             }
             this.Controls.Add(pnlUpgrade);
         }
+
         private void UpgradeButtonClicked(object sender, EventArgs e)
         {
             Button btn = sender as Button;
-            if (btn != null && btn.Tag != null)
-            {
-                ApplyUpgrade((int)btn.Tag);
-            }
+            if (btn != null && btn.Tag != null) ApplyUpgrade((int)btn.Tag);
         }
 
         private Button CreateButton(string text, int x, int y, EventHandler clickEvent)
@@ -136,13 +133,11 @@ namespace SpaceShooter
         // ================= VÒNG LẶP GAME & LOGIC =================
         private void GameLoop(object sender, EventArgs e)
         {
-            // 1. Di chuyển người chơi (4 HƯỚNG)
             if (goLeft && player.Left > 0) player.Left -= playerSpeed;
             if (goRight && player.Left < pnlGame.Width - player.Width) player.Left += playerSpeed;
             if (goUp && player.Top > 0) player.Top -= playerSpeed;
             if (goDown && player.Bottom < pnlGame.Height) player.Top += playerSpeed;
 
-            // 2. Bắn súng
             if (fireCooldown > 0) fireCooldown--;
             if (isShooting && fireCooldown <= 0)
             {
@@ -150,7 +145,6 @@ namespace SpaceShooter
                 fireCooldown = fireRate;
             }
 
-            // 3. Cập nhật Đạn Player
             for (int i = playerBullets.Count - 1; i >= 0; i--)
             {
                 BulletInfo bi = (BulletInfo)playerBullets[i].Tag;
@@ -160,7 +154,6 @@ namespace SpaceShooter
                     RemoveControl(playerBullets[i], playerBullets);
             }
 
-            // 4. Sinh & Cập nhật Quái (HỆ THỐNG WAVE)
             HandleWaveSystem();
 
             for (int i = enemies.Count - 1; i >= 0; i--)
@@ -169,20 +162,30 @@ namespace SpaceShooter
                 EnemyInfo info = (EnemyInfo)en.Tag;
                 en.Top += info.Speed;
                 
-                // Địch bắn trả (Boss bắn chùm, quái thường bắn 1)
-                if (info.IsBoss && rnd.Next(0, 100) < 5) ShootEnemyBullet(en, true);
-                else if (!info.IsBoss && rnd.Next(0, 100) < 2 + currentWave) ShootEnemyBullet(en, false);
+                if (info.FireCooldown > 0) info.FireCooldown--;
+                
+                if (info.FireCooldown <= 0)
+                {
+                    if (info.IsBoss && rnd.Next(0, 100) < 10) 
+                    {
+                        ShootEnemyBullet(en, true); // Gọi hàm bắn đạn ngẫu nhiên của Boss
+                        info.FireCooldown = Math.Max(25, 60 - (currentWave * 2)); 
+                    }
+                    else if (!info.IsBoss && rnd.Next(0, 100) < 5) 
+                    {
+                        ShootEnemyBullet(en, false); 
+                        info.FireCooldown = Math.Max(50, 120 - (currentWave * 5)); 
+                    }
+                }
 
-                // Va chạm Người - Địch
                 if (player.Bounds.IntersectsWith(en.Bounds))
                 {
-                    TakeDamage(info.IsBoss ? 50 : 20);
+                    TakeDamage(info.IsBoss ? 40 : 15);
                     RemoveControl(en, enemies);
                 }
                 else if (en.Top > pnlGame.Height) RemoveControl(en, enemies);
             }
 
-            // 5. Cập nhật Đạn Địch
             for (int i = enemyBullets.Count - 1; i >= 0; i--)
             {
                 BulletInfo bi = (BulletInfo)enemyBullets[i].Tag;
@@ -209,27 +212,24 @@ namespace SpaceShooter
                 return;
             }
 
-            // Đang trong Wave
             if (enemiesSpawned < enemiesToSpawn)
             {
-                if (rnd.Next(0, 100) < 2 + currentWave) // Tỉ lệ ra quái tăng theo wave
+                if (rnd.Next(0, 100) < 2 + currentWave) 
                 {
                     SpawnEnemy(false);
                     enemiesSpawned++;
                 }
-                // Cuối đợt ra Boss (mỗi 2 đợt ra 1 con boss)
                 if (enemiesSpawned == enemiesToSpawn && currentWave % 2 == 0)
                 {
                     SpawnEnemy(true);
                 }
             }
-            // Hết quái -> Qua Đợt mới
             else if (enemies.Count == 0)
             {
                 currentWave++;
-                enemiesToSpawn += 5; // Đợt sau thêm 5 quái
+                enemiesToSpawn += 2; 
                 enemiesSpawned = 0;
-                wavePauseTimer = 100; // Nghỉ 2 giây (100 khung hình)
+                wavePauseTimer = 100; 
                 lblWave.Text = $"ĐỢT: {currentWave}";
             }
         }
@@ -244,18 +244,20 @@ namespace SpaceShooter
                 en.Size = new Size(120, 120);
                 en.Location = new Point(rnd.Next(0, pnlGame.Width - 120), -120);
                 LoadImageSafe(en, "Assets/boss.png", Color.Purple);
-                info.Hp = 100 + (currentWave * 100); // Boss máu cực trâu
+                info.Hp = 100 + (currentWave * 20); 
                 info.Speed = 2;
                 info.IsBoss = true;
+                info.FireCooldown = 30; 
             }
             else
             {
                 en.Size = new Size(50, 50);
                 en.Location = new Point(rnd.Next(0, pnlGame.Width - 50), -50);
                 LoadImageSafe(en, "Assets/enemy.png", Color.Crimson);
-                info.Hp = 20 + (currentWave * 10); // Quái thường máu tăng dần
+                info.Hp = 10 + (currentWave * 5); 
                 info.Speed = rnd.Next(3, 6);
                 info.IsBoss = false;
+                info.FireCooldown = 50; 
             }
             info.MaxHp = info.Hp;
             en.Tag = info;
@@ -268,7 +270,6 @@ namespace SpaceShooter
             int bSizeX = isBigBullet ? 15 : 8;
             int bSizeY = isBigBullet ? 30 : 20;
 
-            // Hàm cục bộ tạo đạn
             void CreateBullet(int dx, int dy, int offsetX)
             {
                 PictureBox b = new PictureBox { Size = new Size(bSizeX, bSizeY), BackColor = Color.Yellow, Location = new Point(player.Left + (player.Width/2) - (bSizeX/2) + offsetX, player.Top - bSizeY) };
@@ -278,24 +279,58 @@ namespace SpaceShooter
                 pnlGame.Controls.Add(b);
             }
 
-            if (multiShot == 1) CreateBullet(0, -bulletSpeed, 0); // 1 nòng giữa
-            else if (multiShot == 2) { CreateBullet(-2, -bulletSpeed, -15); CreateBullet(2, -bulletSpeed, 15); } // 2 nòng chéo nhẹ
-            else { CreateBullet(0, -bulletSpeed, 0); CreateBullet(-5, -bulletSpeed, -20); CreateBullet(5, -bulletSpeed, 20); } // 3 nòng tủa ra
+            if (multiShot == 1) CreateBullet(0, -bulletSpeed, 0); 
+            else if (multiShot == 2) { CreateBullet(-2, -bulletSpeed, -15); CreateBullet(2, -bulletSpeed, 15); } 
+            else { CreateBullet(0, -bulletSpeed, 0); CreateBullet(-5, -bulletSpeed, -20); CreateBullet(5, -bulletSpeed, 20); } 
         }
 
-        private void ShootEnemyBullet(PictureBox enemy, bool isSpread)
+        // ================= ĐÃ SỬA: HỆ THỐNG ĐẠN NGẪU NHIÊN CỦA BOSS =================
+        private void ShootEnemyBullet(PictureBox enemy, bool isBoss)
         {
-            void CreateEnemyBullet(int dx, int dy)
+            void CreateEnemyBullet(int dx, int dy, Color color, int size = 10)
             {
-                PictureBox b = new PictureBox { Size = new Size(10, 10), BackColor = Color.Orange, Location = new Point(enemy.Left + enemy.Width / 2, enemy.Bottom) };
-                LoadImageSafe(b, "Assets/enemy_bullet.png", Color.Orange);
-                b.Tag = new BulletInfo { Dx = dx, Dy = dy, Dmg = 15 };
+                PictureBox b = new PictureBox { Size = new Size(size, size), BackColor = color, Location = new Point(enemy.Left + enemy.Width / 2 - (size/2), enemy.Bottom) };
+                LoadImageSafe(b, "Assets/enemy_bullet.png", color);
+                b.Tag = new BulletInfo { Dx = dx, Dy = dy, Dmg = size > 10 ? 25 : 15 }; // Đạn to cắn đau hơn
                 enemyBullets.Add(b);
                 pnlGame.Controls.Add(b);
             }
 
-            CreateEnemyBullet(0, 10);
-            if (isSpread) { CreateEnemyBullet(-5, 8); CreateEnemyBullet(5, 8); } // Boss bắn tỏa
+            if (isBoss)
+            {
+                int pattern = rnd.Next(1, 4); // Random 3 kiểu bắn kịch tính
+                
+                if (pattern == 1)
+                {
+                    // Kiểu 1: Bắn tỏa 3 tia truyền thống
+                    CreateEnemyBullet(0, 10, Color.Orange);
+                    CreateEnemyBullet(-4, 8, Color.Orange);
+                    CreateEnemyBullet(4, 8, Color.Orange);
+                }
+                else if (pattern == 2)
+                {
+                    // Kiểu 2: Đạn bắn tỉa siêu tốc (1 viên bự màu đỏ phóng cực nhanh)
+                    CreateEnemyBullet(0, 18, Color.Red, 16); 
+                }
+                else if (pattern == 3)
+                {
+                    // Kiểu 3: Đạn song nòng từ 2 bên cánh Boss khóa đường chạy
+                    PictureBox b1 = new PictureBox { Size = new Size(10, 10), BackColor = Color.Fuchsia, Location = new Point(enemy.Left + 15, enemy.Bottom) };
+                    LoadImageSafe(b1, "Assets/enemy_bullet.png", Color.Fuchsia);
+                    b1.Tag = new BulletInfo { Dx = 0, Dy = 10, Dmg = 15 };
+                    enemyBullets.Add(b1); pnlGame.Controls.Add(b1);
+
+                    PictureBox b2 = new PictureBox { Size = new Size(10, 10), BackColor = Color.Fuchsia, Location = new Point(enemy.Right - 25, enemy.Bottom) };
+                    LoadImageSafe(b2, "Assets/enemy_bullet.png", Color.Fuchsia);
+                    b2.Tag = new BulletInfo { Dx = 0, Dy = 10, Dmg = 15 };
+                    enemyBullets.Add(b2); pnlGame.Controls.Add(b2);
+                }
+            }
+            else
+            {
+                // Quái thường chỉ bắn 1 viên cơ bản thẳng xuống
+                CreateEnemyBullet(0, 10, Color.Orange);
+            }
         }
 
         private void CheckBulletCollisions()
@@ -309,13 +344,14 @@ namespace SpaceShooter
                         BulletInfo bInfo = (BulletInfo)playerBullets[j].Tag;
                         EnemyInfo eInfo = (EnemyInfo)enemies[i].Tag;
                         
-                        eInfo.Hp -= bInfo.Dmg; // Trừ máu quái
-                        RemoveControl(playerBullets[j], playerBullets); // Xóa đạn
+                        eInfo.Hp -= bInfo.Dmg; 
+                        RemoveControl(playerBullets[j], playerBullets); 
 
-                        if (eInfo.Hp <= 0) // Quái chết
+                        if (eInfo.Hp <= 0) 
                         {
                             score += eInfo.IsBoss ? 100 : 10;
-                            GainXp(eInfo.IsBoss ? 30 : 10);
+                            // ĐÃ SỬA: Quái thường cho hẳn 20 XP. 3 con đợt một = 60 XP (>50 XP) -> Chắc chắn lên cấp 2!
+                            GainXp(eInfo.IsBoss ? 30 : 20); 
                             RemoveControl(enemies[i], enemies);
                         }
                         break;
@@ -330,7 +366,6 @@ namespace SpaceShooter
             gameTimer.Stop();
             goLeft = false; goRight = false; goUp = false; goDown = false; isShooting = false;
             
-            // Danh sách 6 Option
             var allOptions = new List<Tuple<int, string>> {
                 Tuple.Create(1, "Hồi 50 HP"),
                 Tuple.Create(2, "Tăng Tốc Độ Bắn"),
@@ -340,13 +375,11 @@ namespace SpaceShooter
                 Tuple.Create(6, "Tăng Tốc Độ Di Chuyển")
             };
 
-            // Trộn ngẫu nhiên và lấy 3 cái đầu
             var randomOptions = allOptions.OrderBy(x => rnd.Next()).Take(3).ToList();
 
             for (int i = 0; i < 3; i++)
             {
                 btnUpgrades[i].Text = randomOptions[i].Item2;
-                // Chỉ việc lưu ID của option vào cục Tag, hàm Click ở trên sẽ tự lôi ra xài
                 btnUpgrades[i].Tag = randomOptions[i].Item1; 
             }
 
@@ -405,7 +438,7 @@ namespace SpaceShooter
         private void ResetGameStats() {
             currentHp = 100; maxHp = 100; score = 0; currentLevel = 1; currentXp = 0; xpToNextLevel = 50; 
             fireRate = 15; bulletSpeed = 20; playerSpeed = 10; multiShot = 1; isBigBullet = false;
-            currentWave = 1; enemiesSpawned = 0; enemiesToSpawn = 5;
+            currentWave = 1; enemiesSpawned = 0; enemiesToSpawn = 3; 
             player.Location = new Point(270, 600);
             ClearAllEntities(); UpdateUI();
         }
