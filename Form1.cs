@@ -8,8 +8,8 @@ using Timer = System.Windows.Forms.Timer;
 
 namespace SpaceShooter
 {
-    // ĐÃ THÊM: Các biến để quản lý Giai đoạn (Phase) di chuyển của Boss
-    public class EnemyInfo { public int Hp; public int MaxHp; public int Speed; public bool IsBoss; public int FireCooldown; public int BossPhase; public int MovementTimer; public int TargetX; public int TargetY; }
+    // ĐÃ SỬA: Dùng float cho Speed để tốc độ có thể tăng dần từ số thập phân
+    public class EnemyInfo { public int Hp; public int MaxHp; public float Speed; public float MaxSpeed; public bool IsBoss; public int FireCooldown; public int BossPhase; public int MovementTimer; public int TargetX; public int TargetY; }
     public class BulletInfo { public int Dx; public int Dy; public int Dmg; }
 
     public partial class Form1 : Form
@@ -37,6 +37,7 @@ namespace SpaceShooter
         int enemiesToSpawn = 3; 
         int enemiesSpawned = 0;
         int wavePauseTimer = 0; 
+        bool bossSpawnedThisWave = false; // ĐÃ THÊM: Biến kiểm tra Boss đã ra sân chưa
 
         ProgressBar pbHealth, pbXp;
         Label lblScore, lblLevel, lblCountdown, lblWave, lblAutoFire;
@@ -163,54 +164,57 @@ namespace SpaceShooter
                 var en = enemies[i];
                 EnemyInfo info = (EnemyInfo)en.Tag;
                 
-                // ĐÃ SỬA: LẬP TRÌNH AI DI CHUYỂN CHO BOSS
                 if (info.IsBoss)
                 {
-                    if (info.BossPhase == 0) // Giai đoạn 1: Bay loạn xạ
+                    if (info.BossPhase == 0) // Giai đoạn 1: Bay khởi động
                     {
-                        if (en.Left < info.TargetX) en.Left += info.Speed * 2;
-                        if (en.Left > info.TargetX) en.Left -= info.Speed * 2;
-                        if (en.Top < info.TargetY) en.Top += info.Speed * 2;
-                        if (en.Top > info.TargetY) en.Top -= info.Speed * 2;
+                        // ĐÃ SỬA: Tăng dần tốc độ từ chậm lên nhanh
+                        if (info.Speed < info.MaxSpeed) info.Speed += 0.02f; 
+
+                        int moveStep = (int)info.Speed;
+                        if (moveStep < 1) moveStep = 1; // Đảm bảo không bị đứng im
+
+                        if (en.Left < info.TargetX) en.Left += moveStep;
+                        if (en.Left > info.TargetX) en.Left -= moveStep;
+                        if (en.Top < info.TargetY) en.Top += moveStep;
+                        if (en.Top > info.TargetY) en.Top -= moveStep;
 
                         info.MovementTimer--;
-                        if (info.MovementTimer <= 0) info.BossPhase = 1; // Hết giờ bay lượn
+                        if (info.MovementTimer <= 0) info.BossPhase = 1; 
                         else if (Math.Abs(en.Left - info.TargetX) < 15 && Math.Abs(en.Top - info.TargetY) < 15)
                         {
                             info.TargetX = rnd.Next(10, pnlGame.Width - 130);
                             info.TargetY = rnd.Next(50, 300);
                         }
                     }
-                    else if (info.BossPhase == 1) // Giai đoạn 2: Trở về vị trí Top giữa
+                    else if (info.BossPhase == 1) // Giai đoạn 2: Về vị trí giữa
                     {
                         int centerX = (pnlGame.Width - en.Width) / 2;
-                        if (en.Left < centerX) en.Left += info.Speed;
-                        if (en.Left > centerX) en.Left -= info.Speed;
-                        if (en.Top > 30) en.Top -= info.Speed;
-                        if (en.Top < 30) en.Top += info.Speed;
+                        int moveStep = (int)info.MaxSpeed; 
+                        if (en.Left < centerX) en.Left += moveStep;
+                        if (en.Left > centerX) en.Left -= moveStep;
+                        if (en.Top > 30) en.Top -= moveStep;
+                        if (en.Top < 30) en.Top += moveStep;
 
-                        if (Math.Abs(en.Left - centerX) <= info.Speed + 1 && Math.Abs(en.Top - 30) <= info.Speed + 1)
+                        if (Math.Abs(en.Left - centerX) <= moveStep + 1 && Math.Abs(en.Top - 30) <= moveStep + 1)
                         {
-                            info.BossPhase = 2; // Về đúng vị trí -> chuyển sang trôi xuống
+                            info.BossPhase = 2; 
                         }
                     }
-                    else if (info.BossPhase == 2) // Giai đoạn 3: Trôi xuống từ từ
+                    else if (info.BossPhase == 2) // Giai đoạn 3: Trôi xuống
                     {
                         en.Top += 1; 
-                        // Lắc lư trái phải nhè nhẹ
-                        en.Left += (rnd.Next(0, 2) == 0 ? -2 : 2);
+                        en.Left += (rnd.Next(0, 2) == 0 ? -1 : 1); 
                         
-                        // Khóa không cho Boss lọt ra mép màn hình
                         if (en.Left < 0) en.Left = 0;
                         if (en.Right > pnlGame.Width) en.Left = pnlGame.Width - en.Width;
                     }
                 }
                 else 
                 {
-                    en.Top += info.Speed; // Quái thường vẫn lao thẳng
+                    en.Top += (int)info.Speed; 
                 }
                 
-                // HỆ THỐNG XẢ ĐẠN
                 if (info.FireCooldown > 0) info.FireCooldown--;
                 
                 if (info.FireCooldown <= 0)
@@ -218,7 +222,6 @@ namespace SpaceShooter
                     if (info.IsBoss) 
                     {
                         ShootEnemyBullet(en, true); 
-                        // Boss bắn nhanh và gắt hơn
                         info.FireCooldown = Math.Max(20, 50 - (currentWave * 2)); 
                     }
                     else if (!info.IsBoss && rnd.Next(0, 100) < 5) 
@@ -228,10 +231,18 @@ namespace SpaceShooter
                     }
                 }
 
+                // Va chạm người chơi và lính/Boss
                 if (player.Bounds.IntersectsWith(en.Bounds))
                 {
                     TakeDamage(info.IsBoss ? 50 : 20); 
-                    RemoveControl(en, enemies);
+                    if (!info.IsBoss) 
+                    {
+                        RemoveControl(en, enemies); // Lính thường đụng là nổ
+                    }
+                    else 
+                    {
+                        en.Top -= 50; // Boss thì bất tử với tông xe, đẩy Boss dội ngược lại xíu
+                    }
                 }
                 else if (en.Top > pnlGame.Height) RemoveControl(en, enemies);
             }
@@ -264,6 +275,7 @@ namespace SpaceShooter
 
             int maxConcurrentEnemies = Math.Min(15, 8 + (currentWave / 2));
 
+            // ĐÃ SỬA: Logic sinh quái mới. Quái nhỏ ra hết và chết sạch mới ra Boss
             if (enemiesSpawned < enemiesToSpawn)
             {
                 if (enemies.Count < maxConcurrentEnemies && rnd.Next(0, 100) < 5 + currentWave) 
@@ -271,18 +283,24 @@ namespace SpaceShooter
                     SpawnEnemy(false);
                     enemiesSpawned++;
                 }
-                if (enemiesSpawned == enemiesToSpawn && currentWave % 2 == 0)
-                {
-                    SpawnEnemy(true);
-                }
             }
-            else if (enemies.Count == 0) 
+            else if (enemies.Count == 0) // Khi trên sân hoàn toàn sạch bóng quái địch
             {
-                currentWave++;
-                enemiesToSpawn += 2; 
-                enemiesSpawned = 0;
-                wavePauseTimer = 100; 
-                lblWave.Text = $"ĐỢT: {currentWave}";
+                // Kiểm tra xem có phải Đợt Boss không (mỗi 5 đợt)
+                if (currentWave % 5 == 0 && !bossSpawnedThisWave)
+                {
+                    SpawnEnemy(true); // Xuất hiện Boss cô đơn một mình
+                    bossSpawnedThisWave = true;
+                }
+                else // Đã dọn xong Boss, hoặc dọn xong đợt quái thường
+                {
+                    currentWave++;
+                    enemiesToSpawn += 2; 
+                    enemiesSpawned = 0;
+                    bossSpawnedThisWave = false; // Reset cờ cho đợt Boss tiếp theo
+                    wavePauseTimer = 100; 
+                    lblWave.Text = $"ĐỢT: {currentWave}";
+                }
             }
         }
 
@@ -297,14 +315,17 @@ namespace SpaceShooter
                 en.Location = new Point(rnd.Next(0, pnlGame.Width - 120), -120);
                 LoadImageSafe(en, "Assets/boss.png", Color.Purple);
                 
-                info.Hp = 200 + (currentWave * 60); // Buff thêm tí máu vì nay Boss lạng lách khó bắn
-                info.Speed = 3; 
+                // ĐÃ SỬA MÁU BOSS: Vì 5 đợt mới ra 1 con nên máu cực kỳ trâu bò (Đợt 5 = 1500 Máu)
+                info.Hp = 500 + (currentWave * 200); 
+                
+                info.Speed = 0.5f; // Khởi đầu tốc độ rất chậm chạp
+                info.MaxSpeed = Math.Min(5f, 2f + (currentWave * 0.1f)); // Giới hạn tốc độ không quá gắt
+                
                 info.IsBoss = true;
                 info.FireCooldown = 10; 
                 
-                // Khởi tạo Phase 0
                 info.BossPhase = 0;
-                info.MovementTimer = 150; // Quậy tung chảo trong 3 giây
+                info.MovementTimer = 200; // Khởi động trong khoảng 4 giây
                 info.TargetX = rnd.Next(10, pnlGame.Width - 130);
                 info.TargetY = rnd.Next(50, 300); 
             }
@@ -315,6 +336,7 @@ namespace SpaceShooter
                 LoadImageSafe(en, "Assets/enemy.png", Color.Crimson);
                 info.Hp = 10 + (currentWave * 5); 
                 info.Speed = rnd.Next(3, 7);
+                info.MaxSpeed = info.Speed;
                 info.IsBoss = false;
                 info.FireCooldown = 50; 
             }
@@ -357,7 +379,7 @@ namespace SpaceShooter
 
             if (isBoss)
             {
-                int pattern = rnd.Next(1, 8); // ĐÃ THÊM: Random 7 kiểu đạn
+                int pattern = rnd.Next(1, 8); 
                 
                 if (pattern == 1)
                 {
@@ -390,7 +412,6 @@ namespace SpaceShooter
                 }
                 else if (pattern == 5)
                 {
-                    // Hoa tiêu 8 hướng xung quanh Boss
                     CreateEnemyBullet(0, 12, Color.Lime, 12);  
                     CreateEnemyBullet(0, -12, Color.Lime, 12); 
                     CreateEnemyBullet(-12, 0, Color.Lime, 12); 
@@ -402,14 +423,12 @@ namespace SpaceShooter
                 }
                 else if (pattern == 6)
                 {
-                    // Lưới cản đường (Bay chậm)
                     CreateEnemyBullet(-30, 5, Color.White, 18);
                     CreateEnemyBullet(0, 5, Color.White, 18);
                     CreateEnemyBullet(30, 5, Color.White, 18);
                 }
                 else if (pattern == 7)
                 {
-                    // Súng hoa cải (Nhiều hạt nhỏ)
                     for(int i = 0; i < 5; i++) {
                         CreateEnemyBullet(rnd.Next(-6, 6), rnd.Next(12, 18), Color.Gold, 8);
                     }
@@ -437,8 +456,8 @@ namespace SpaceShooter
 
                         if (eInfo.Hp <= 0) 
                         {
-                            score += eInfo.IsBoss ? 100 : 10;
-                            GainXp(eInfo.IsBoss ? 30 : 20); 
+                            score += eInfo.IsBoss ? 300 : 10;
+                            GainXp(eInfo.IsBoss ? 150 : 20); // Boss cho cực nhiều kinh nghiệm
                             RemoveControl(enemies[i], enemies);
                         }
                         break;
@@ -527,7 +546,7 @@ namespace SpaceShooter
         private void ResetGameStats() {
             currentHp = 100; maxHp = 100; score = 0; currentLevel = 1; currentXp = 0; xpToNextLevel = 50; 
             fireRate = 15; bulletSpeed = 20; playerSpeed = 10; multiShot = 1; bigBulletLevel = 0; autoFire = false;
-            currentWave = 1; enemiesSpawned = 0; enemiesToSpawn = 3; 
+            currentWave = 1; enemiesSpawned = 0; enemiesToSpawn = 3; bossSpawnedThisWave = false;
             player.Location = new Point(270, 600);
             ClearAllEntities(); UpdateUI();
         }
