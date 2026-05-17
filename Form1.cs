@@ -8,7 +8,8 @@ using Timer = System.Windows.Forms.Timer;
 
 namespace SpaceShooter
 {
-    public class EnemyInfo { public int Hp; public int MaxHp; public int Speed; public bool IsBoss; public int FireCooldown; }
+    // ĐÃ THÊM: Các biến để quản lý Giai đoạn (Phase) di chuyển của Boss
+    public class EnemyInfo { public int Hp; public int MaxHp; public int Speed; public bool IsBoss; public int FireCooldown; public int BossPhase; public int MovementTimer; public int TargetX; public int TargetY; }
     public class BulletInfo { public int Dx; public int Dy; public int Dmg; }
 
     public partial class Form1 : Form
@@ -18,9 +19,8 @@ namespace SpaceShooter
         int countdownSeconds = 3;
         bool goLeft, goRight, goUp, goDown, isShooting;
         
-        // CƠ CHẾ AUTO-FIRE (NÚT A)
         bool autoFire = false;
-        bool aKeyPressed = false; // Ngăn chặn việc đè phím A nháy liên tục
+        bool aKeyPressed = false; 
 
         // --- CHỈ SỐ NGƯỜI CHƠI ---
         int playerSpeed = 10, bulletSpeed = 20, fireRate = 15;
@@ -29,7 +29,6 @@ namespace SpaceShooter
         int currentXp = 0, xpToNextLevel = 50, currentLevel = 1;
         int score = 0;
         
-        // Vũ khí ĐÃ ĐƯỢC SỬA: Cộng dồn vô hạn
         int multiShot = 1; 
         int bigBulletLevel = 0; 
 
@@ -142,7 +141,6 @@ namespace SpaceShooter
             if (goDown && player.Bottom < pnlGame.Height) player.Top += playerSpeed;
 
             if (fireCooldown > 0) fireCooldown--;
-            // ĐÃ THÊM: Điều kiện bắn tự động (autoFire)
             if ((isShooting || autoFire) && fireCooldown <= 0) 
             {
                 ShootPlayerBullet();
@@ -165,25 +163,63 @@ namespace SpaceShooter
                 var en = enemies[i];
                 EnemyInfo info = (EnemyInfo)en.Tag;
                 
-                // ĐÃ SỬA: Boss dừng ở trên cùng xả đạn
-                if (info.IsBoss && en.Top >= 30) 
+                // ĐÃ SỬA: LẬP TRÌNH AI DI CHUYỂN CHO BOSS
+                if (info.IsBoss)
                 {
-                    en.Top = 30; // Boss đứng lại
+                    if (info.BossPhase == 0) // Giai đoạn 1: Bay loạn xạ
+                    {
+                        if (en.Left < info.TargetX) en.Left += info.Speed * 2;
+                        if (en.Left > info.TargetX) en.Left -= info.Speed * 2;
+                        if (en.Top < info.TargetY) en.Top += info.Speed * 2;
+                        if (en.Top > info.TargetY) en.Top -= info.Speed * 2;
+
+                        info.MovementTimer--;
+                        if (info.MovementTimer <= 0) info.BossPhase = 1; // Hết giờ bay lượn
+                        else if (Math.Abs(en.Left - info.TargetX) < 15 && Math.Abs(en.Top - info.TargetY) < 15)
+                        {
+                            info.TargetX = rnd.Next(10, pnlGame.Width - 130);
+                            info.TargetY = rnd.Next(50, 300);
+                        }
+                    }
+                    else if (info.BossPhase == 1) // Giai đoạn 2: Trở về vị trí Top giữa
+                    {
+                        int centerX = (pnlGame.Width - en.Width) / 2;
+                        if (en.Left < centerX) en.Left += info.Speed;
+                        if (en.Left > centerX) en.Left -= info.Speed;
+                        if (en.Top > 30) en.Top -= info.Speed;
+                        if (en.Top < 30) en.Top += info.Speed;
+
+                        if (Math.Abs(en.Left - centerX) <= info.Speed + 1 && Math.Abs(en.Top - 30) <= info.Speed + 1)
+                        {
+                            info.BossPhase = 2; // Về đúng vị trí -> chuyển sang trôi xuống
+                        }
+                    }
+                    else if (info.BossPhase == 2) // Giai đoạn 3: Trôi xuống từ từ
+                    {
+                        en.Top += 1; 
+                        // Lắc lư trái phải nhè nhẹ
+                        en.Left += (rnd.Next(0, 2) == 0 ? -2 : 2);
+                        
+                        // Khóa không cho Boss lọt ra mép màn hình
+                        if (en.Left < 0) en.Left = 0;
+                        if (en.Right > pnlGame.Width) en.Left = pnlGame.Width - en.Width;
+                    }
                 }
                 else 
                 {
-                    en.Top += info.Speed;
+                    en.Top += info.Speed; // Quái thường vẫn lao thẳng
                 }
                 
+                // HỆ THỐNG XẢ ĐẠN
                 if (info.FireCooldown > 0) info.FireCooldown--;
                 
                 if (info.FireCooldown <= 0)
                 {
-                    if (info.IsBoss && en.Top == 30) // Boss chỉ xả đạn khi đã vào đúng vị trí
+                    if (info.IsBoss) 
                     {
                         ShootEnemyBullet(en, true); 
-                        // Đợt càng cao Boss bắn càng nhanh (Giới hạn tối đa siêu nhanh là 15 frames)
-                        info.FireCooldown = Math.Max(15, 60 - (currentWave * 3)); 
+                        // Boss bắn nhanh và gắt hơn
+                        info.FireCooldown = Math.Max(20, 50 - (currentWave * 2)); 
                     }
                     else if (!info.IsBoss && rnd.Next(0, 100) < 5) 
                     {
@@ -194,7 +230,7 @@ namespace SpaceShooter
 
                 if (player.Bounds.IntersectsWith(en.Bounds))
                 {
-                    TakeDamage(info.IsBoss ? 50 : 20); // Đụng Boss mất nửa máu
+                    TakeDamage(info.IsBoss ? 50 : 20); 
                     RemoveControl(en, enemies);
                 }
                 else if (en.Top > pnlGame.Height) RemoveControl(en, enemies);
@@ -226,7 +262,6 @@ namespace SpaceShooter
                 return;
             }
 
-            // ĐÃ SỬA TỐI ƯU LAG: Tối đa trên màn hình chỉ có 12 con (tăng dần 1 tí theo wave nhưng không quá 15)
             int maxConcurrentEnemies = Math.Min(15, 8 + (currentWave / 2));
 
             if (enemiesSpawned < enemiesToSpawn)
@@ -241,7 +276,7 @@ namespace SpaceShooter
                     SpawnEnemy(true);
                 }
             }
-            else if (enemies.Count == 0) // Hết đợt
+            else if (enemies.Count == 0) 
             {
                 currentWave++;
                 enemiesToSpawn += 2; 
@@ -261,11 +296,17 @@ namespace SpaceShooter
                 en.Size = new Size(120, 120);
                 en.Location = new Point(rnd.Next(0, pnlGame.Width - 120), -120);
                 LoadImageSafe(en, "Assets/boss.png", Color.Purple);
-                // ĐÃ SỬA MÁU BOSS: Máu gốc 150 + tăng 50 máu mỗi đợt. Đợt 20 máu Boss là 1150 cực trâu.
-                info.Hp = 150 + (currentWave * 50); 
-                info.Speed = 3; // Boss lao ra nhanh
+                
+                info.Hp = 200 + (currentWave * 60); // Buff thêm tí máu vì nay Boss lạng lách khó bắn
+                info.Speed = 3; 
                 info.IsBoss = true;
                 info.FireCooldown = 10; 
+                
+                // Khởi tạo Phase 0
+                info.BossPhase = 0;
+                info.MovementTimer = 150; // Quậy tung chảo trong 3 giây
+                info.TargetX = rnd.Next(10, pnlGame.Width - 130);
+                info.TargetY = rnd.Next(50, 300); 
             }
             else
             {
@@ -285,10 +326,9 @@ namespace SpaceShooter
 
         private void ShootPlayerBullet()
         {
-            // ĐÃ SỬA: Đạn to ra liên tục theo Level
             int bSizeX = 8 + (bigBulletLevel * 5);
             int bSizeY = 20 + (bigBulletLevel * 10);
-            int damage = 15 + (bigBulletLevel * 20); // Sát thương khủng khiếp hơn
+            int damage = 15 + (bigBulletLevel * 20); 
 
             void CreateBullet(int dx, int dy, int offsetX)
             {
@@ -317,11 +357,10 @@ namespace SpaceShooter
 
             if (isBoss)
             {
-                int pattern = rnd.Next(1, 5); // ĐÃ SỬA: 4 Kiểu Đạn Khác Nhau
+                int pattern = rnd.Next(1, 8); // ĐÃ THÊM: Random 7 kiểu đạn
                 
                 if (pattern == 1)
                 {
-                    // Tỏa 5 tia dày đặc
                     CreateEnemyBullet(0, 12, Color.Orange, 12);
                     CreateEnemyBullet(-3, 10, Color.Orange, 12);
                     CreateEnemyBullet(3, 10, Color.Orange, 12);
@@ -330,12 +369,10 @@ namespace SpaceShooter
                 }
                 else if (pattern == 2)
                 {
-                    // Laser tử thần siêu to, cực nhanh
                     CreateEnemyBullet(0, 25, Color.Red, 25); 
                 }
                 else if (pattern == 3)
                 {
-                    // Đạn song nòng từ 2 cánh khóa mục tiêu
                     PictureBox b1 = new PictureBox { Size = new Size(12, 12), BackColor = Color.Cyan, Location = new Point(enemy.Left + 15, enemy.Bottom) };
                     LoadImageSafe(b1, "Assets/enemy_bullet.png", Color.Cyan);
                     b1.Tag = new BulletInfo { Dx = -2, Dy = 15, Dmg = 20 };
@@ -346,11 +383,36 @@ namespace SpaceShooter
                     b2.Tag = new BulletInfo { Dx = 2, Dy = 15, Dmg = 20 };
                     enemyBullets.Add(b2); pnlGame.Controls.Add(b2);
                 }
-                else 
+                else if (pattern == 4) 
                 {
-                    // Mưa đạn chùm ngẫu nhiên
                     CreateEnemyBullet(rnd.Next(-10, 10), rnd.Next(8, 15), Color.Magenta, 15);
                     CreateEnemyBullet(rnd.Next(-10, 10), rnd.Next(8, 15), Color.Magenta, 15);
+                }
+                else if (pattern == 5)
+                {
+                    // Hoa tiêu 8 hướng xung quanh Boss
+                    CreateEnemyBullet(0, 12, Color.Lime, 12);  
+                    CreateEnemyBullet(0, -12, Color.Lime, 12); 
+                    CreateEnemyBullet(-12, 0, Color.Lime, 12); 
+                    CreateEnemyBullet(12, 0, Color.Lime, 12);  
+                    CreateEnemyBullet(-8, 8, Color.Lime, 12);  
+                    CreateEnemyBullet(8, 8, Color.Lime, 12);   
+                    CreateEnemyBullet(-8, -8, Color.Lime, 12); 
+                    CreateEnemyBullet(8, -8, Color.Lime, 12);  
+                }
+                else if (pattern == 6)
+                {
+                    // Lưới cản đường (Bay chậm)
+                    CreateEnemyBullet(-30, 5, Color.White, 18);
+                    CreateEnemyBullet(0, 5, Color.White, 18);
+                    CreateEnemyBullet(30, 5, Color.White, 18);
+                }
+                else if (pattern == 7)
+                {
+                    // Súng hoa cải (Nhiều hạt nhỏ)
+                    for(int i = 0; i < 5; i++) {
+                        CreateEnemyBullet(rnd.Next(-6, 6), rnd.Next(12, 18), Color.Gold, 8);
+                    }
                 }
             }
             else
@@ -420,7 +482,7 @@ namespace SpaceShooter
                 case 3: bulletSpeed += 5; break;
                 case 4: 
                     if (multiShot < 3) multiShot++; 
-                    else bigBulletLevel++; // ĐÃ SỬA: Cộng dồn level đạn vô hạn
+                    else bigBulletLevel++; 
                     break;
                 case 5: maxHp += 50; currentHp += 50; break;
                 case 6: playerSpeed += 3; break;
@@ -498,7 +560,6 @@ namespace SpaceShooter
             if (e.KeyCode == Keys.Down) goDown = true;
             if (e.KeyCode == Keys.Space) isShooting = true;
             
-            // XỬ LÝ AUTO FIRE: Nhấn A để bật/tắt
             if (e.KeyCode == Keys.A && !aKeyPressed) 
             {
                 autoFire = !autoFire;
@@ -514,7 +575,6 @@ namespace SpaceShooter
             if (e.KeyCode == Keys.Down) goDown = false;
             if (e.KeyCode == Keys.Space) isShooting = false;
             
-            // Thả phím A ra để chuẩn bị cho lần bấm tiếp theo
             if (e.KeyCode == Keys.A) aKeyPressed = false;
         }
     }
